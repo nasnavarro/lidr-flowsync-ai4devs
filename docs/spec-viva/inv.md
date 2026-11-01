@@ -8,7 +8,11 @@ Permitir que una persona cree una cuenta en FlowSync, entre con su email y contr
 
 ### Requirement: Formato común de las respuestas de la API
 
-La API SHALL responder siempre en JSON bajo el prefijo `/api/v1`. Las respuestas correctas con contenido SHALL envolver su carga útil en un objeto `{ "data": ... }`, y las respuestas de error SHALL devolver un objeto `{ "errors": [ ... ] }` donde cada error trae al menos `message`.
+La API SHALL responder siempre en JSON bajo el prefijo `/api/v1`. Las respuestas correctas con contenido SHALL envolver su carga útil en un objeto `{ "data": ... }`, y los errores de validación, de credenciales y de autenticación SHALL devolver un objeto `{ "errors": [ ... ] }` donde cada error trae al menos `message`.
+
+#### Scenario: Errores fuera de la validación y la autenticación
+- **WHEN** un cliente pide una ruta de la API que no existe, o envía un cuerpo JSON que no se puede leer
+- **THEN** la API responde en JSON (`404` o `400` respectivamente) con un objeto de error que tiene `message` pero no la clave `errors`, y fuera de producción incluye además detalles técnicos del fallo
 
 #### Scenario: Respuesta correcta envuelta en data
 - **WHEN** un cliente hace una petición válida a un endpoint de cuentas que devuelve datos (registro, inicio de sesión o perfil)
@@ -74,9 +78,17 @@ El sistema SHALL permitir crear una cuenta con `POST /api/v1/auth/signup` sin es
 - **WHEN** un cliente envía un `email` de más de 254 caracteres
 - **THEN** la API responde `422` con un error sobre el campo `email` y no crea ninguna cuenta
 
-#### Scenario: Campos enviados vacíos
-- **WHEN** un cliente envía `email`, `password` o `passwordConfirmation` como cadena vacía
+#### Scenario: Campos enviados vacíos o solo con espacios
+- **WHEN** un cliente envía `email`, `password` o `passwordConfirmation` como cadena vacía o formada solo por espacios
 - **THEN** la API los trata como ausentes y responde `422` con un error de regla `required` sobre cada uno
+
+#### Scenario: Espacios alrededor de los valores
+- **WHEN** un cliente envía un valor de texto (incluida la contraseña) con espacios al principio o al final
+- **THEN** la API descarta esos espacios antes de validar y guardar, de modo que la contraseña queda registrada sin ellos
+
+#### Scenario: Email que solo difiere en mayúsculas
+- **WHEN** un cliente se registra con un email que coincide con el de una cuenta existente salvo en el uso de mayúsculas y minúsculas
+- **THEN** la API lo considera un email distinto y crea una cuenta nueva
 
 #### Scenario: Contraseña demasiado corta o demasiado larga
 - **WHEN** un cliente envía una `password` de menos de 8 caracteres o de más de 32
@@ -188,7 +200,15 @@ La aplicación web SHALL ofrecer en `/register` un formulario para crear cuenta,
 
 #### Scenario: Errores de validación del servidor
 - **WHEN** el servidor rechaza el registro por datos inválidos
-- **THEN** cada error aparece en castellano bajo su campo (sustituyendo la ayuda de la contraseña si el error es de ese campo), sin aviso general, con estos textos: "Ese email ya está registrado. Inicia sesión en su lugar.", "Introduce una dirección de email válida.", "Las contraseñas no coinciden.", "Falta rellenar el email/la contraseña/la confirmación de la contraseña.", "<campo> debe tener al menos 8 caracteres." o "<campo> no puede superar los 32 caracteres."
+- **THEN** cada error aparece en castellano bajo su campo (sustituyendo la ayuda de la contraseña si el error es de ese campo), sin aviso general, con estos textos: "Ese email ya está registrado. Inicia sesión en su lugar.", "Introduce una dirección de email válida.", "Las contraseñas no coinciden.", "Falta rellenar el email/la contraseña/la confirmación de la contraseña.", "la contraseña/la confirmación de la contraseña debe tener al menos 8 caracteres." o "la contraseña/la confirmación de la contraseña no puede superar los 32 caracteres."; cualquier otra regla incumplida se muestra como "Revisa <el campo>."
+
+#### Scenario: Error de validación sobre un dato que no está en pantalla
+- **WHEN** el servidor rechaza el envío con algún error sobre un campo que el formulario no muestra
+- **THEN** el mensaje del primer error aparece como aviso general sobre el formulario, además de los errores que sí tienen campo en pantalla
+
+#### Scenario: Fallo inesperado en el propio navegador
+- **WHEN** el envío falla por un motivo que no es una respuesta del servidor ni la falta de conexión
+- **THEN** la persona ve el aviso general "Algo ha ido mal. Inténtalo de nuevo."
 
 #### Scenario: Solo el primer error por campo
 - **WHEN** el servidor devuelve varios errores sobre el mismo campo
@@ -224,7 +244,7 @@ La aplicación web SHALL ofrecer en `/login` un formulario de acceso, bajo el t�
 
 #### Scenario: Datos mal formados
 - **WHEN** una persona deja vacío el email o la contraseña, o escribe un email con formato inválido, y pulsa "Entrar"
-- **THEN** ve el error en castellano bajo el campo correspondiente ("Falta rellenar el email.", "Falta rellenar la contraseña.", "Introduce una dirección de email válida.") y ningún aviso general
+- **THEN** ve el error en castellano bajo el campo correspondiente ("Falta rellenar el email.", "Falta rellenar la contraseña.", "Introduce una dirección de email válida.") y ningún aviso general nuevo; si ya se estaba mostrando el motivo de una sesión perdida, ese aviso sigue visible
 
 #### Scenario: Servidor inalcanzable o con fallo
 - **WHEN** una persona pulsa "Entrar" y el servidor no responde o falla de forma inesperada
@@ -268,7 +288,7 @@ La aplicación web SHALL mostrar en `/profile` los datos de la persona con sesi�
 
 #### Scenario: Cerrar sesión
 - **WHEN** una persona pulsa "Cerrar sesión"
-- **THEN** el botón muestra "Cerrando sesión…", la sesión se olvida en el navegador, la persona aterriza en `/login` sin ningún aviso y se pide al servidor que invalide la sesión
+- **THEN** la sesión se olvida en el navegador y la persona aterriza de inmediato en `/login` sin ningún aviso, sin esperar al servidor, al que se pide en segundo plano que invalide la sesión
 
 #### Scenario: Cerrar sesión sin conexión con el servidor
 - **WHEN** una persona pulsa "Cerrar sesión" y el servidor no responde o rechaza la petición
